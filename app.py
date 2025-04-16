@@ -7,34 +7,30 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ========== Section 1: Risk Prediction Dashboard ==========
+# ========== Load real dataset ==========
 @st.cache_data
-def load_model():
-    model = XGBClassifier(max_depth=4, n_estimators=30, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
-    df = pd.DataFrame({
-        'Age': np.random.randint(18, 70, 500),
-        'Job': np.random.randint(0, 4, 500),
-        'Credit amount': np.random.randint(1000, 20000, 500),
-        'Duration': np.random.randint(6, 48, 500),
-    })
+def load_data():
+    df = pd.read_csv("german_credit_data.csv")
     df['DebtPerMonth'] = df['Credit amount'] / df['Duration']
     df['IsYoung'] = (df['Age'] < 30).astype(int)
-    df['HasSaving'] = np.random.randint(0, 2, 500)
-    def create_risk(row):
-        if row['Credit amount'] > 10000 and row['Duration'] > 24:
-            return 2
-        elif row['Credit amount'] > 5000:
-            return 1
-        else:
-            return 0
-    y = df.apply(create_risk, axis=1)
+    df['HasSaving'] = df['Saving accounts'].notnull().astype(int)
+    df['Risk'] = df['Risk'].map({'Low': 0, 'Medium': 1, 'High': 2}) if df['Risk'].dtype == 'object' else df['Risk']
+    return df
+
+df = load_data()
+
+# ========== Section 1: Risk Prediction Dashboard ==========
+@st.cache_data
+def train_model():
+    model = XGBClassifier(max_depth=4, n_estimators=30, use_label_encoder=False, eval_metric='mlogloss', random_state=42)
     X = df[['Age', 'Job', 'Credit amount', 'Duration', 'DebtPerMonth', 'IsYoung', 'HasSaving']]
+    y = df['Risk']
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     model.fit(X_scaled, y)
     return model, scaler
 
-model, scaler = load_model()
+model, scaler = train_model()
 
 st.title("📊 Risk Management Dashboard")
 section = st.sidebar.radio("เลือกหน้า Dashboard:", ["🔮 ทำนายความเสี่ยงรายบุคคล", "📈 วิเคราะห์ภาพรวมตาม Purpose"])
@@ -42,7 +38,7 @@ section = st.sidebar.radio("เลือกหน้า Dashboard:", ["🔮 ท�
 if section == "🔮 ทำนายความเสี่ยงรายบุคคล":
     st.header("🔮 Risk Level Prediction")
     age = st.slider("อายุ (ปี)", 18, 70, 30)
-    job = st.selectbox("ระดับอาชีพ (0-3)", [0, 1, 2, 3])
+    job = st.selectbox("ระดับอาชีพ (0-3)", sorted(df['Job'].unique()))
     credit = st.number_input("วงเงินกู้ (บาท)", min_value=1000, max_value=20000, value=8000)
     duration = st.number_input("ระยะเวลาผ่อน (เดือน)", min_value=6, max_value=60, value=24)
     is_young = 1 if age < 30 else 0
@@ -73,30 +69,16 @@ if section == "🔮 ทำนายความเสี่ยงรายบุ
 # ========== Section 2: Purpose Risk Overview ==========
 elif section == "📈 วิเคราะห์ภาพรวมตาม Purpose":
     st.header("📈 วิเคราะห์ความเสี่ยงตามวัตถุประสงค์การขอกู้")
-    purposes = ['car', 'radio/TV', 'furniture', 'education', 'business', 'vacation', 'repairs', 'retraining']
     risk_levels = ['Low', 'Medium', 'High']
-    n = 300
-    df = pd.DataFrame({
-        'Purpose': np.random.choice(purposes, n),
-        'Credit amount': np.random.randint(1000, 20000, n),
-        'Duration': np.random.randint(6, 48, n),
-    })
-    def simulate_risk(row):
-        if row['Purpose'] in ['business', 'retraining'] or (row['Credit amount'] > 12000 and row['Duration'] > 24):
-            return 'High'
-        elif row['Credit amount'] > 7000:
-            return 'Medium'
-        else:
-            return 'Low'
-    df['Risk'] = df.apply(simulate_risk, axis=1)
-    selected_purpose = st.selectbox("เลือกวัตถุประสงค์ในการขอกู้:", sorted(df['Purpose'].unique()))
+    selected_purpose = st.selectbox("เลือกวัตถุประสงค์ในการขอกู้:", sorted(df['Purpose'].dropna().unique()))
     filtered_df = df[df['Purpose'] == selected_purpose]
+
     st.subheader(f"ระดับความเสี่ยงของลูกค้าที่ขอกู้เพื่อ '{selected_purpose}'")
-    risk_counts = filtered_df['Risk'].value_counts().reindex(risk_levels, fill_value=0)
-    st.bar_chart(risk_counts)
+    purpose_risk_counts = filtered_df['Risk'].map({0: 'Low', 1: 'Medium', 2: 'High'}).value_counts().reindex(risk_levels, fill_value=0)
+    st.bar_chart(purpose_risk_counts)
 
     st.subheader("🔤 WordCloud ของวัตถุประสงค์ทั้งหมด")
-    purpose_text = ' '.join(df['Purpose'])
+    purpose_text = ' '.join(df['Purpose'].dropna().astype(str))
     wc = WordCloud(width=800, height=300, background_color='white').generate(purpose_text)
     fig, ax = plt.subplots()
     ax.imshow(wc, interpolation='bilinear')
