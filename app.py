@@ -10,7 +10,7 @@ import seaborn as sns
 # ========== Load real dataset ==========
 @st.cache_data
 def load_data():
-    df = pd.read_csv("german_credit_data.csv")
+    df = pd.read_csv("german_credit_data1.csv")
     df['DebtPerMonth'] = df['Credit amount'] / df['Duration']
     df['IsYoung'] = (df['Age'] < 30).astype(int)
     df['HasSaving'] = df['Saving accounts'].notnull().astype(int)
